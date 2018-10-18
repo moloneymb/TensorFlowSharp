@@ -2042,7 +2042,7 @@ namespace TensorFlow
 	/// <see cref="T:Tensorflow.TFGraph"/>, but they can also be constructed
 	/// manually using the low-level <see cref="T:Tensorflow.TFOperationDesc"/> API.
 	/// </remarks>
-	public partial class TFOperation
+	public partial class TFOperation : IComparable, IComparable<TFOperation>
 	{
 		internal IntPtr handle;
 
@@ -2304,11 +2304,25 @@ namespace TensorFlow
 			return r;
 		}
 
-		/// <summary>
-		/// Returns the handle to the idx-th output of the operation.
-		/// </summary>
-		/// <param name="idx">Index of the output in the operation.</param>
-		public TFOutput this [int idx] {
+        public int CompareTo(object obj)
+        {
+			if (obj.GetType() != GetType())
+				return -1;
+			return CompareTo(obj as TFOperation);
+        }
+
+        public int CompareTo(TFOperation other)
+        {
+            if (other == null) 
+				return -1;
+            return Name.CompareTo(other.Name);
+        }
+
+        /// <summary>
+        /// Returns the handle to the idx-th output of the operation.
+        /// </summary>
+        /// <param name="idx">Index of the output in the operation.</param>
+        public TFOutput this [int idx] {
 			get {
 				return new TFOutput (this, idx);
 			}
@@ -3589,7 +3603,7 @@ namespace TensorFlow
 	/// </para>
 	/// </remarks>
 	[StructLayout (LayoutKind.Sequential)]
-	public struct TFOutput
+	public struct TFOutput : IComparable, IComparable<TFOutput>
 	{
 		unsafe TF_Operation LLOperation;
 
@@ -3686,7 +3700,25 @@ namespace TensorFlow
 		{
 			return string.Format ("[{3} Index={1} Operation={2} (0x{0:X})]", (long) LLOperation, Index, Operation, OutputType);
 		}
-	}
+
+        public int CompareTo(object obj)
+        {
+			if (obj.GetType() != GetType())
+				return -1;
+			return CompareTo((TFOutput)obj);
+        }
+
+        public int CompareTo(TFOutput other)
+        {
+			var left = Operation.handle.ToInt64();
+			var right = Operation.handle.ToInt64();
+			if (left != right) {
+				return left.CompareTo(right);
+			} else {
+				return Index.CompareTo(other.Index);
+			}
+        }
+    }
 
 	/// <summary>
 	/// Low-level: Enumeration describing the types of a metadata attribute

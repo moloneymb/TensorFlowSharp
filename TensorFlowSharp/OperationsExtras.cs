@@ -388,7 +388,7 @@ namespace TensorFlow
 		/// <param name="clip_value_max">The minimum value to clip by. A 0 - D(scalar) tensor, or a tensor with the same shape as <paramref name="x"/>.</param>
 		/// <param name="operName">Operation name, optional.</param>
 		/// <returns>A clipped <see cref="TFOutput">tensor</see>.</returns>
-		public TFOutput ClipByValue (TFOutput x, TFOutput clip_value_min, TFOutput clip_value_max, string operName = null)
+		public TFOutput ClipByValue2 (TFOutput x, TFOutput clip_value_min, TFOutput clip_value_max, string operName = null)
 		{
 			// https://github.com/tensorflow/tensorflow/blob/r1.2/tensorflow/python/ops/clip_ops.py#L33
 			var scopeName = MakeName ("ClipByValue", operName);
