@@ -1,5 +1,4 @@
-﻿﻿//
-// TensorFlow.cs; Bindings to the TensorFlow C API for .NET
+﻿// TensorFlow.cs; Bindings to the TensorFlow C API for .NET
 // 
 // Authors:
 //   Miguel de Icaza (miguel@microsoft.com)
@@ -1268,7 +1267,7 @@ namespace TensorFlow
 					throw new ArgumentException ("outputs is null, but outputNames is not", nameof (outputNames));
 			} else {
 				if (outputNames != null && outputs.Length != outputNames.Length)
-					throw new ArgumentException ("the outputs and outputNames array are specified, but have different lenghts");
+					throw new ArgumentException ("the outputs and outputNames array are specified, but have different lengths");
 			}
 			var cstatus = TFStatus.Setup (status);
 
@@ -1593,6 +1592,7 @@ namespace TensorFlow
 			this.operName = operName;
 		}
 
+
 		internal override void NativeDispose (IntPtr handle)
 		{
 			// If you reach this, you never called FinishOperation
@@ -1730,7 +1730,7 @@ namespace TensorFlow
 
 			int n = values.Length;
 			var unmanaged = new IntPtr [n];
-			var lenghts = new UIntPtr [n];
+			var lengths = new UIntPtr [n];
 			for (int i = 0; i < n; i++) {
 				var bytes = Encoding.UTF8.GetBytes (values [i]);
 				var buf = Marshal.AllocHGlobal (bytes.Length + 1);
@@ -1738,9 +1738,9 @@ namespace TensorFlow
 
 				Marshal.Copy (bytes, 0, buf, bc);
 				unmanaged [i] = buf;
-				lenghts [i] = (size_t)bc;
+				lengths [i] = (size_t)bc;
 			}
-			TF_SetAttrStringList (handle, attrName, unmanaged, lenghts, n);
+			TF_SetAttrStringList (handle, attrName, unmanaged, lengths, n);
 			return this;
 		}
 
@@ -1890,7 +1890,7 @@ namespace TensorFlow
 
 		// extern void TF_SetAttrShapeList (TF_OperationDescription *desc, const char *attr_name, const int64_t *const *dims, const int *num_dims, int num_shapes);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
-		static extern unsafe void TF_SetAttrShapeList (TF_OperationDescription desc, string attr_name, IntPtr dims, int [] num_dims, int num_shapes);
+		static extern unsafe void TF_SetAttrShapeList (TF_OperationDescription desc, string attr_name, IntPtr[] dims, int[] num_dims, int num_shapes);
 
 		public TFOperationDesc SetAttrShape (string attrName, TFShape [] shapeList)
 		{
@@ -1904,22 +1904,18 @@ namespace TensorFlow
 			var num_dims = new int [shapeList.Length];
 			unsafe
 			{
-				var unmanaged = Marshal.AllocHGlobal (sizeof (IntPtr) * num_shapes);
-				int ofs = 0;
-				for (int i = 0; i < num_shapes; i++) {
-					IntPtr array = Marshal.AllocHGlobal (sizeof (long) * shapeList [i].dims.Length);
-					Marshal.Copy (shapeList [i].dims, 0, array, shapeList [i].dims.Length);
-					Marshal.WriteIntPtr (unmanaged, ofs, array);
-					ofs += sizeof (IntPtr);
-				}
-				TF_SetAttrShapeList (handle, attrName, unmanaged, num_dims, num_shapes);
-				ofs = 0;
-				for (int i = 0; i < num_shapes; i++) {
-					var ptr = Marshal.ReadIntPtr (unmanaged, ofs);
-					Marshal.FreeHGlobal (ptr);
-					ofs += sizeof (IntPtr);
-				}
-				Marshal.FreeHGlobal (unmanaged);
+                var dims = new IntPtr[num_shapes];
+                for (int i = 0; i < num_shapes; i++)
+                {
+                    num_dims[i] = shapeList[i].NumDimensions;
+                    var array = Marshal.AllocHGlobal(sizeof(long) * shapeList[i].dims.Length);
+                    Marshal.Copy(shapeList[i].dims, 0, array, shapeList[i].dims.Length);
+                    dims[i] = array;
+                }
+                //fixed (IntPtr* dimsF = &dims[0])
+                //{
+                TF_SetAttrShapeList (handle, attrName, dims, num_dims, num_shapes);
+                //}
 			}
 			return this;
 		}
@@ -1938,12 +1934,39 @@ namespace TensorFlow
 		}
 
 		// extern void TF_SetAttrTensorShapeProtoList (TF_OperationDescription *desc, const char *attr_name, const void *const *protos, const size_t *proto_lens, int num_shapes, TF_Status *status);
+//		[DllImport (NativeBinding.TensorFlowLibrary)]
+//		static extern unsafe void TF_SetAttrTensorShapeProtoList (TF_OperationDescription desc, string attr_name, void** protos, size_t* proto_lens, int num_shapes, TF_Status status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
-		static extern unsafe void TF_SetAttrTensorShapeProtoList (TF_OperationDescription desc, string attr_name, void** protos, size_t* proto_lens, int num_shapes, TF_Status status);
-		// TODO:
+		static extern unsafe void TF_SetAttrTensorShapeProtoList (TF_OperationDescription desc, string attr_name, IntPtr[] protos, size_t* proto_lens, int num_shapes, TF_Status status);
 
-		// extern void TF_SetAttrTensor (TF_OperationDescription *desc, const char *attr_name, TF_Tensor *value, TF_Status *status);
-		[DllImport (NativeBinding.TensorFlowLibrary)]
+        // WARN: untested
+        // TODO: consider why ShapeProt is IntPtr and ShapeProtoList is TFBuffer[]
+		public TFOperationDesc SetAttrShapeProtoList (string attrName, TFBuffer[] protos, TFStatus status = null)
+		{
+			if (handle == IntPtr.Zero)
+				ObjectDisposedException ();
+			if (attrName == null)
+				throw new ArgumentNullException (nameof (attrName));
+			if (protos == null)
+				throw new ArgumentNullException ("protos");
+			var cstatus = TFStatus.Setup (status);
+			var unmanaged = new IntPtr [protos.Length];
+            size_t[] lengths = new size_t[protos.Length];
+			for (int i = 0; i < protos.Length; i++)
+				unmanaged [i] = protos[i].handle;
+            unsafe
+            {
+                fixed (size_t* protoLengths = &lengths[0])
+                    TF_SetAttrTensorShapeProtoList(handle, attrName, unmanaged, protoLengths, unmanaged.Length, cstatus.handle);
+            }
+			// prevent finalization of managed TFBuffer
+			GC.KeepAlive(protos);
+			cstatus.CheckMaybeRaise (status);
+			return this;
+		}
+
+        // extern void TF_SetAttrTensor (TF_OperationDescription *desc, const char *attr_name, TF_Tensor *value, TF_Status *status);
+        [DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_SetAttrTensor (TF_OperationDescription desc, string attr_name, TF_Tensor value, TF_Status status);
 
 		public TFOperationDesc SetAttr (string attrName, TFTensor tensor, TFStatus status = null)
@@ -1964,6 +1987,7 @@ namespace TensorFlow
 		// extern void TF_SetAttrTensorList (TF_OperationDescription *desc, const char *attr_name, TF_Tensor *const *values, int num_values, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_SetAttrTensorList (TF_OperationDescription desc, string attr_name, IntPtr [] values, int num_values, TF_Status status);
+
 		public TFOperationDesc SetAttr (string attrName, TFTensor [] tensor, TFStatus status = null)
 		{
 			if (handle == IntPtr.Zero)
@@ -1971,7 +1995,7 @@ namespace TensorFlow
 			if (attrName == null)
 				throw new ArgumentNullException (nameof (attrName));
 			if (tensor == null)
-				throw new ArgumentNullException (nameof (tensor));
+				throw new ArgumentNullException ("tensor");
 			var cstatus = TFStatus.Setup (status);
 			var unmanaged = new IntPtr [tensor.Length];
 			for (int i = 0; i < tensor.Length; i++)
@@ -1985,8 +2009,25 @@ namespace TensorFlow
 
 		// extern void TF_SetAttrValueProto (TF_OperationDescription *desc, const char *attr_name, const void *proto, size_t proto_len, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
-		static extern unsafe void TF_SetAttrValueProto (TF_OperationDescription desc, string attr_name, void* proto, size_t proto_len, TF_Status status);
-		// TODO:
+		static extern unsafe void TF_SetAttrValueProto (TF_OperationDescription desc, string attr_name, IntPtr proto, size_t proto_len, TF_Status status);
+
+        // WARN: untested
+		public TFOperationDesc SetAttr(string attrName, TFBuffer proto, TFStatus status = null)
+		{
+            if (handle == IntPtr.Zero)
+            	TFDisposable.ObjectDisposedException ();
+			if (attrName == null)
+				throw new ArgumentNullException (nameof (attrName));
+			if (proto == null)
+				throw new ArgumentNullException ("proto");
+            var cstatus = TFStatus.Setup (status);
+            unsafe
+            {
+                TF_SetAttrValueProto(handle, attrName, proto.LLBuffer->data, proto.LLBuffer->length, cstatus.Handle);
+            }
+            cstatus.CheckMaybeRaise (status);
+            return this;
+        }
 
 		// extern TF_Operation * TF_FinishOperation (TF_OperationDescription *desc, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
@@ -2061,6 +2102,60 @@ namespace TensorFlow
 			this.graph = graph;
 		}
 
+        // TODO: Perhaps move this to a util class
+        private string attrTypeToString(TFAttributeType type, bool isList)
+        {
+            string name;
+            switch (type)
+            {
+                case TFAttributeType.String:
+                    name = "String";
+                    break;
+                case TFAttributeType.Int:
+                    name = "Int";
+                    break;
+                case TFAttributeType.Float:
+                    name = "Float";
+                    break;
+                case TFAttributeType.Bool:
+                    name = "Boolean";
+                    break;
+                case TFAttributeType.Type:
+                    name = "DataType";
+                    break;
+                case TFAttributeType.Shape:
+                    name = "Shape";
+                    break;
+                case TFAttributeType.Placeholder:
+                    name = "Placeholder";
+                    break;
+                case TFAttributeType.Func:
+                    name = "Function";
+                    break;
+                default:
+                    name = "Unknown";
+                    break;
+            }
+            if (isList)
+            {
+                return "List[" + name + "]";
+            }
+            else
+            {
+                return name;
+            }
+        }
+
+        private void checkAttrType(string attrName, TFAttributeMetadata metadata, TFAttributeType type, bool isList)
+        {
+            if (metadata.Type != type || metadata.IsList != isList)
+            {
+                throw new Exception(String.Format("Attribute '{0}' is not a {1}. It is a '{2}', instead.",
+                                                  attrName,
+                                                  attrTypeToString(type,isList), 
+                                                  attrTypeToString(metadata.Type,metadata.IsList)));
+            }
+        }
 		// extern const char * TF_OperationName (TF_Operation *oper);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe IntPtr TF_OperationName (TF_Operation oper);
@@ -2191,92 +2286,451 @@ namespace TensorFlow
 
 		// extern void TF_OperationGetAttrString (TF_Operation *oper, const char *attr_name, void *value, size_t max_length, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
-		static extern unsafe void TF_OperationGetAttrString (TF_Operation oper, string attr_name, void* value, size_t max_length, TF_Status status);
-		// TODO:
+		static extern unsafe void TF_OperationGetAttrString (TF_Operation oper, string attr_name, void* value, int max_length, TF_Status status);
+
+        public string GetAttrString(string attrName, TFStatus status = null)
+        {
+            if (handle == IntPtr.Zero)
+                TFDisposable.ObjectDisposedException();
+            if (attrName == null)
+                throw new ArgumentNullException(nameof(attrName));
+            var cstatus = TFStatus.Setup(status);
+            var metadata = GetAttributeMetadata(attrName, cstatus);
+            if (metadata.TotalSize < 0)
+                throw new Exception("Metadata Error");
+            checkAttrType(attrName, metadata, TFAttributeType.String, false);
+            IntPtr buf = Marshal.AllocHGlobal((int) metadata.TotalSize + 1);
+            int maxLength = (int) metadata.TotalSize;
+            unsafe
+            {
+                TF_OperationGetAttrString(handle, attrName, buf.ToPointer(), maxLength, cstatus.handle);
+            } 
+            cstatus.CheckMaybeRaise (status);
+            var bytes = new byte[maxLength];
+            Marshal.Copy(buf, bytes, 0, bytes.Length);
+            return Encoding.UTF8.GetString(bytes);
+        }
 
 		// extern void TF_OperationGetAttrStringList (TF_Operation *oper, const char *attr_name, void **values, size_t *lengths, int max_values, void *storage, size_t storage_size, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
-		static extern unsafe void TF_OperationGetAttrStringList (TF_Operation oper, string attr_name, void** values, size_t* lengths, int max_values, void* storage, size_t storage_size, TF_Status status);
-		// TODO:
+		static extern unsafe void TF_OperationGetAttrStringList (TF_Operation oper, string attr_name, IntPtr* values, UIntPtr* lengths, int max_values, IntPtr storage, int storage_size, TF_Status status);
+
+        public string[] GetAttrStringList(string attrName, TFStatus status = null)
+        {
+            if (handle == IntPtr.Zero)
+                TFDisposable.ObjectDisposedException();
+            if (attrName == null)
+                throw new ArgumentNullException(nameof(attrName));
+            var cstatus = TFStatus.Setup(status);
+            var metadata = GetAttributeMetadata(attrName, cstatus);
+            if (metadata.TotalSize < 0)
+                throw new Exception("Metadata Error");
+            checkAttrType(attrName, metadata, TFAttributeType.String, true);
+            int storageSize = (int) metadata.TotalSize + 1;
+            IntPtr storage = Marshal.AllocHGlobal(storageSize);
+            var lengths = new UIntPtr[metadata.ListSize];
+            var values = new IntPtr[metadata.ListSize];
+            unsafe
+            {
+                fixed (IntPtr* valuesF = &values[0])
+                {
+                    fixed (UIntPtr* lengthsF = &lengths[0])
+                    {
+                        TF_OperationGetAttrStringList(handle, attrName, valuesF, lengthsF, (int) metadata.ListSize, storage, storageSize, cstatus.handle); 
+                    }
+                }
+            }
+            cstatus.CheckMaybeRaise (status);
+            var returnValues = new string[metadata.ListSize];
+            for (int i = 0; i < metadata.ListSize; i++)
+            {
+                int length = (int)lengths[i];
+                var bytes = new byte[length];
+                Marshal.Copy(values[i],bytes,0,length);
+                returnValues[i] = System.Text.Encoding.UTF8.GetString(bytes);
+            }
+            Marshal.FreeHGlobal(storage);
+            return returnValues;
+        }
 
 		// extern void TF_OperationGetAttrInt (TF_Operation *oper, const char *attr_name, int64_t *value, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_OperationGetAttrInt (TF_Operation oper, string attr_name, long* value, TF_Status status);
-		// TODO:
+
+        public long GetAttrInt(string attrName, TFStatus status = null)
+        {
+            if (handle == IntPtr.Zero)
+                TFDisposable.ObjectDisposedException();
+            if (attrName == null)
+                throw new ArgumentNullException(nameof(attrName));
+            var cstatus = TFStatus.Setup(status);
+            var value = 0L;
+            var metadata = GetAttributeMetadata(attrName, cstatus);
+            checkAttrType(attrName, metadata, TFAttributeType.Int, false);
+            unsafe
+            {
+                TF_OperationGetAttrInt(handle, attrName, &value, cstatus.handle);
+            } 
+            cstatus.CheckMaybeRaise(status);
+            return value;
+        }
 
 		// extern void TF_OperationGetAttrIntList (TF_Operation *oper, const char *attr_name, int64_t *values, int max_values, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_OperationGetAttrIntList (TF_Operation oper, string attr_name, long* values, int max_values, TF_Status status);
-		// TODO:
+
+        // WARN: untested
+        public long[] GetAttrIntList(string attrName, TFStatus status = null)
+        {
+            if (handle == IntPtr.Zero)
+                TFDisposable.ObjectDisposedException();
+            if (attrName == null)
+                throw new ArgumentNullException(nameof(attrName));
+            var cstatus = TFStatus.Setup(status);
+            var metadata = GetAttributeMetadata(attrName, cstatus);
+            checkAttrType(attrName, metadata, TFAttributeType.Int, true);
+            long[] value = new long[metadata.ListSize];
+            unsafe
+            {
+                fixed (long* data = &value[0])
+                    TF_OperationGetAttrIntList(handle, attrName, data, (int) metadata.ListSize, cstatus.handle);
+            } 
+            cstatus.CheckMaybeRaise(status);
+            return value;
+        }
 
 		// extern void TF_OperationGetAttrFloat (TF_Operation *oper, const char *attr_name, float *value, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_OperationGetAttrFloat (TF_Operation oper, string attr_name, float* value, TF_Status status);
-		// TODO:
+
+        public float GetAttrFloat(string attrName, TFStatus status = null)
+        {
+            if (handle == IntPtr.Zero)
+                TFDisposable.ObjectDisposedException();
+            if (attrName == null)
+                throw new ArgumentNullException(nameof(attrName));
+            var cstatus = TFStatus.Setup(status);
+            var metadata = GetAttributeMetadata(attrName, cstatus);
+            checkAttrType(attrName, metadata, TFAttributeType.Float, false);
+            var value = 0.0f;
+            unsafe
+            {
+                TF_OperationGetAttrFloat(handle, attrName, &value, cstatus.handle);
+            } 
+            cstatus.CheckMaybeRaise(status);
+            return value;
+        }
 
 		// extern void TF_OperationGetAttrFloatList (TF_Operation *oper, const char *attr_name, float *values, int max_values, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_OperationGetAttrFloatList (TF_Operation oper, string attr_name, float* values, int max_values, TF_Status status);
-		// TODO:
+
+        // WARN: untested
+        public float[] GetAttrFloatList(string attrName, TFStatus status = null)
+        {
+            if (handle == IntPtr.Zero)
+                TFDisposable.ObjectDisposedException();
+            if (attrName == null)
+                throw new ArgumentNullException(nameof(attrName));
+            var cstatus = TFStatus.Setup(status);
+            var metadata = GetAttributeMetadata(attrName, cstatus);
+            checkAttrType(attrName, metadata, TFAttributeType.Float, true);
+            float[] value = new float[metadata.ListSize];
+            unsafe
+            {
+                fixed (float* data = &value[0])
+                    TF_OperationGetAttrFloatList(handle, attrName, data, (int) metadata.ListSize, cstatus.handle);
+            } 
+            cstatus.CheckMaybeRaise(status);
+            return value;
+        }
 
 		// extern void TF_OperationGetAttrBool (TF_Operation *oper, const char *attr_name, unsigned char *value, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_OperationGetAttrBool (TF_Operation oper, string attr_name, byte* value, TF_Status status);
-		// TODO:
+
+        public bool GetAttrBool(string attrName, TFStatus status = null)
+        {
+            if (handle == IntPtr.Zero)
+                TFDisposable.ObjectDisposedException();
+            if (attrName == null)
+                throw new ArgumentNullException(nameof(attrName));
+            var cstatus = TFStatus.Setup(status);
+            var metadata = GetAttributeMetadata(attrName, cstatus);
+            checkAttrType(attrName, metadata, TFAttributeType.Bool, false);
+            byte value = 0;
+            unsafe
+            {
+                TF_OperationGetAttrBool(handle, attrName, &value, cstatus.handle);
+            } 
+            cstatus.CheckMaybeRaise(status);
+            return Convert.ToBoolean(value);
+        }
 
 		// extern void TF_OperationGetAttrBoolList (TF_Operation *oper, const char *attr_name, unsigned char *values, int max_values, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_OperationGetAttrBoolList (TF_Operation oper, string attr_name, byte* values, int max_values, TF_Status status);
-		// TODO:
+
+        // WARN: untested
+        public bool[] GetAttrBoolList(string attrName, TFStatus status = null)
+        {
+            if (handle == IntPtr.Zero)
+                TFDisposable.ObjectDisposedException();
+            if (attrName == null)
+                throw new ArgumentNullException(nameof(attrName));
+            var cstatus = TFStatus.Setup(status);
+            var metadata = GetAttributeMetadata(attrName, cstatus);
+            checkAttrType(attrName, metadata, TFAttributeType.Bool, true);
+            byte[] values = new byte[metadata.ListSize];
+            unsafe
+            {
+                fixed (byte* valuesF = &values[0])
+                    TF_OperationGetAttrBoolList(handle, attrName, valuesF, (int) metadata.ListSize, cstatus.handle);
+            } 
+            cstatus.CheckMaybeRaise(status);
+            return values.Select(x => Convert.ToBoolean(x)).ToArray();
+        }
 
 		// extern void TF_OperationGetAttrType (TF_Operation *oper, const char *attr_name, TF_DataType *value, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_OperationGetAttrType (TF_Operation oper, string attr_name, TFDataType* value, TF_Status status);
-		// TODO:
+
+        public TFDataType GetAttrType(string attrName, TFStatus status = null)
+        {
+            if (handle == IntPtr.Zero)
+                TFDisposable.ObjectDisposedException();
+            if (attrName == null)
+                throw new ArgumentNullException(nameof(attrName));
+            var cstatus = TFStatus.Setup(status);
+            var metadata = GetAttributeMetadata(attrName, cstatus);
+            checkAttrType(attrName, metadata, TFAttributeType.Type, false);
+            TFDataType value;
+            unsafe
+            {
+                TF_OperationGetAttrType(handle, attrName, &value, cstatus.handle);
+            } 
+            cstatus.CheckMaybeRaise(status);
+            return value;
+        }
 
 		// extern void TF_OperationGetAttrTypeList (TF_Operation *oper, const char *attr_name, TF_DataType *values, int max_values, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_OperationGetAttrTypeList (TF_Operation oper, string attr_name, TFDataType* values, int max_values, TF_Status status);
-		// TODO:
+
+        public TFDataType[] GetAttrTypeList(string attrName, TFStatus status = null)
+        {
+            if (handle == IntPtr.Zero)
+                TFDisposable.ObjectDisposedException();
+            if (attrName == null)
+                throw new ArgumentNullException(nameof(attrName));
+            var cstatus = TFStatus.Setup(status);
+            var metadata = GetAttributeMetadata(attrName, cstatus);
+            checkAttrType(attrName, metadata, TFAttributeType.Type, true);
+            TFDataType[] values = new TFDataType[metadata.ListSize];
+            unsafe
+            {
+                fixed (TFDataType* valuesF = &values[0])
+                    TF_OperationGetAttrTypeList(handle, attrName, valuesF, (int) metadata.ListSize, cstatus.handle);
+            } 
+            cstatus.CheckMaybeRaise(status);
+            return values;
+        }
 
 		// extern void TF_OperationGetAttrShape (TF_Operation *oper, const char *attr_name, int64_t *value, int num_dims, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_OperationGetAttrShape (TF_Operation oper, string attr_name, long* value, int num_dims, TF_Status status);
-		// TODO:
+
+        public long[] GetAttrShape(string attrName, TFStatus status = null)
+        {
+            if (handle == IntPtr.Zero)
+                TFDisposable.ObjectDisposedException();
+            if (attrName == null)
+                throw new ArgumentNullException(nameof(attrName));
+            var cstatus = TFStatus.Setup(status);
+            var metadata = GetAttributeMetadata(attrName, cstatus);
+            if (metadata.TotalSize < 0)
+                throw new Exception("Metadata Error");
+            checkAttrType(attrName, metadata, TFAttributeType.Shape, false);
+            long[] value = new long[metadata.TotalSize];
+            unsafe
+            {
+                fixed (long* data = &value[0])
+                    TF_OperationGetAttrShape(handle, attrName, data, (int) metadata.TotalSize, cstatus.handle);
+            } 
+            cstatus.CheckMaybeRaise(status);
+            return value;
+        }
 
 		// extern void TF_OperationGetAttrShapeList (TF_Operation *oper, const char *attr_name, int64_t **dims, int *num_dims, int num_shapes, int64_t *storage, int storage_size, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
-		static extern unsafe void TF_OperationGetAttrShapeList (TF_Operation oper, string attr_name, long** dims, int* num_dims, int num_shapes, long* storage, int storage_size, TF_Status status);
-		// TODO:
+		static extern unsafe void TF_OperationGetAttrShapeList (TF_Operation oper, string attr_name, IntPtr* dims, int* num_dims, int num_shapes, long* storage, int storage_size, TF_Status status);
+
+        public TFShape[] GetAttrShapeList(string attrName, TFStatus status = null)
+        {
+            if (handle == IntPtr.Zero)
+                TFDisposable.ObjectDisposedException();
+            if (attrName == null)
+                throw new ArgumentNullException(nameof(attrName));
+            var cstatus = TFStatus.Setup(status);
+            var metadata = GetAttributeMetadata(attrName, cstatus);
+            if (metadata.TotalSize < 0)
+                throw new Exception("Metadata Error");
+            checkAttrType(attrName, metadata, TFAttributeType.Shape, true);
+            var numDims = new int[metadata.ListSize];
+            var storage = new long[metadata.TotalSize];
+            var dims = new IntPtr[metadata.ListSize];
+            unsafe
+            {
+                fixed (IntPtr* dimsF = &dims[0])
+                {
+                    fixed (int* numDimsF = &numDims[0])
+                    {
+                        fixed (long* storageF = &storage[0])
+                        {
+                            TF_OperationGetAttrShapeList(handle, attrName, dimsF, numDimsF, (int)metadata.ListSize, storageF, (int)metadata.TotalSize, cstatus.handle);
+                        }
+                    }
+                }
+            }
+            cstatus.CheckMaybeRaise(status);
+            var returnValues = new TFShape[metadata.ListSize];
+            var offset = 0;
+            for (int i = 0; i < metadata.ListSize; i++)
+            {
+                var xs = new long[numDims[i]];
+                for (int j = 0; j < numDims[i]; j++)
+                {
+                    xs[j] = storage[offset + j];
+                }
+                returnValues[i] = new TFShape(xs);
+                offset += numDims[i];
+            }
+            return returnValues;
+        }
 
 		// extern void TF_OperationGetAttrTensorShapeProto (TF_Operation *oper, const char *attr_name, TF_Buffer *value, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_OperationGetAttrTensorShapeProto (TF_Operation oper, string attr_name, LLBuffer* value, TF_Status status);
-		// TODO:
 
-		// extern void TF_OperationGetAttrTensorShapeProtoList (TF_Operation *oper, const char *attr_name, TF_Buffer **values, int max_values, TF_Status *status);
-		[DllImport (NativeBinding.TensorFlowLibrary)]
+        // NOTE: Commented out for now as we don't have an attribute metadata type associated with TensorShapeProto
+        // WARN: untested
+        //public TFBuffer GetAttrTensorShapeProto(string attrName, TFStatus status = null)
+        //{
+        //    if (handle == IntPtr.Zero)
+        //        TFDisposable.ObjectDisposedException();
+        //    var cstatus = TFStatus.Setup(status);
+        //    var r = new TFBuffer();
+        //    var metadata = GetAttributeMetadata(attrName, cstatus);
+        //    if (metadata.TotalSize < 0)
+        //        throw new Exception("Metadata Error");
+        //    unsafe
+        //    {
+        //        TF_OperationGetAttrTensorShapeProto(handle, attrName, r.LLBuffer, cstatus.Handle);
+
+        //    }
+        //    cstatus.CheckMaybeRaise(status);
+        //    return r;
+        //}
+
+        // extern void TF_OperationGetAttrTensorShapeProtoList (TF_Operation *oper, const char *attr_name, TF_Buffer **values, int max_values, TF_Status *status);
+        [DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_OperationGetAttrTensorShapeProtoList (TF_Operation oper, string attr_name, LLBuffer** values, int max_values, TF_Status status);
-		// TODO:
 
-		// extern void TF_OperationGetAttrTensor (TF_Operation *oper, const char *attr_name, TF_Tensor **value, TF_Status *status);
-		[DllImport (NativeBinding.TensorFlowLibrary)]
+        // NOTE: Commented out for now as we don't have an attribute metadata type associated with TensorShapeProtoList
+        // WARN: untested
+        //public TFBuffer[] GetAttrTensorShapeProtoList(TF_Operation oper, string attrName, TFStatus status = null)
+        //{
+        //    if (handle == IntPtr.Zero)
+        //        TFDisposable.ObjectDisposedException();
+        //    var cstatus = TFStatus.Setup(status);
+        //    var metadata = GetAttributeMetadata(attrName, cstatus);
+        //    TFBuffer[] rs = new TFBuffer[metadata.ListSize];
+        //    unsafe
+        //    {
+        //        LLBuffer*[] ls = new LLBuffer*[metadata.ListSize];
+        //        for (int i = 0; i < metadata.ListSize; i++)
+        //        {
+        //            rs[i] = new TFBuffer();
+        //            ls[i] = rs[i].LLBuffer;
+        //        }
+        //        fixed (LLBuffer** data = &ls[0])
+        //            TF_OperationGetAttrTensorShapeProtoList(handle, attrName, data, (int)metadata.ListSize, cstatus.Handle);
+        //    }
+        //    cstatus.CheckMaybeRaise(status);
+        //    return rs;
+        //}
+
+        // extern void TF_OperationGetAttrTensor (TF_Operation *oper, const char *attr_name, TF_Tensor **value, TF_Status *status);
+        [DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_OperationGetAttrTensor (TF_Operation oper, string attr_name, TF_Tensor* value, TF_Status status);
-		// TODO:
+
+		public TFTensor GetAttrTensor(string attrName, TFStatus status = null)
+		{
+            if (handle == IntPtr.Zero)
+            	TFDisposable.ObjectDisposedException ();
+            var cstatus = TFStatus.Setup (status);
+            var metadata = GetAttributeMetadata(attrName, cstatus);
+            checkAttrType(attrName, metadata, TFAttributeType.Tensor, false);
+            TF_Tensor tensor = IntPtr.Zero;
+            unsafe
+            {
+                TF_OperationGetAttrTensor(handle, attrName, &tensor, cstatus.Handle);
+            }
+            cstatus.CheckMaybeRaise (status);
+            return new TFTensor(tensor);
+		}
 
 		// extern void TF_OperationGetAttrTensorList (TF_Operation *oper, const char *attr_name, TF_Tensor **values, int max_values, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_OperationGetAttrTensorList (TF_Operation oper, string attr_name, TF_Tensor* values, int max_values, TF_Status status);
-		// TODO:
+
+        // WARN: untested
+		public TFTensor[] GetAttrTensorList(string attrName, TFStatus status = null)
+		{
+            if (handle == IntPtr.Zero)
+            	TFDisposable.ObjectDisposedException ();
+            var cstatus = TFStatus.Setup (status);
+            var metadata = GetAttributeMetadata(attrName, cstatus);
+            if (metadata.TotalSize < 0)
+                throw new Exception("Metadata Error");
+            checkAttrType(attrName, metadata, TFAttributeType.Tensor, true);
+            TFTensor[] returnValue = new TFTensor[metadata.ListSize];
+            unsafe
+            {
+                TF_Tensor[] tensorPointers = new TF_Tensor[metadata.ListSize];
+                fixed (TF_Tensor* tensorPointersF = &tensorPointers[0])
+                    TF_OperationGetAttrTensorList(handle, attrName, tensorPointersF, (int) metadata.ListSize, cstatus.Handle);
+                for (int i = 0; i < metadata.ListSize; i++)
+                {
+                    returnValue[i] = new TFTensor(tensorPointers[i]);
+                }
+            }
+            cstatus.CheckMaybeRaise (status);
+            return returnValue;
+		}
 
 		// extern void TF_OperationGetAttrValueProto (TF_Operation *oper, const char *attr_name, TF_Buffer *output_attr_value, TF_Status *status);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_OperationGetAttrValueProto (TF_Operation oper, string attr_name, LLBuffer* output_attr_value, TF_Status status);
-		// TODO:
 
+        // NOTE: Commented out for now as we don't have an attribute metadata type associated with Proto
+        // WARN: untested
+        //public TFBuffer GetAttrValueProto(string attrName, TFStatus status = null)
+        //{
+        //    if (handle == IntPtr.Zero)
+        //        TFDisposable.ObjectDisposedException();
+        //    var cstatus = TFStatus.Setup(status);
+        //    var r = new TFBuffer();
+        //    unsafe
+        //    {
+        //        TF_OperationGetAttrValueProto(handle, attrName, r.LLBuffer, cstatus.Handle);
+        //    }
+        //    cstatus.CheckMaybeRaise(status);
+        //    return r;
+        //}
 
-		// extern void TF_OperationToNodeDef (TF_Operation *oper, TF_Buffer *output_node_def, TF_Status *status);
-		[DllImport (NativeBinding.TensorFlowLibrary)]
+        // extern void TF_OperationToNodeDef (TF_Operation *oper, TF_Buffer *output_node_def, TF_Status *status);
+        [DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_OperationToNodeDef (TF_Operation oper, LLBuffer* output_node_def, TF_Status status);
 
 		/// <summary>
