@@ -2172,6 +2172,11 @@ namespace TensorFlow
 
 		public string OpType => handle == IntPtr.Zero ? "<ObjectDisposedException>" : TF_OperationOpType (handle).GetStr ();
 
+        /// <summary>
+        /// Gets the graph that this operation belongs to.
+        /// </summary>
+        public TFGraph Graph => graph;
+
 		// extern const char * TF_OperationDevice (TF_Operation *oper);
 		[DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe IntPtr TF_OperationDevice (TF_Operation oper);
@@ -2713,21 +2718,20 @@ namespace TensorFlow
 		[DllImport (NativeBinding.TensorFlowLibrary)]
 		static extern unsafe void TF_OperationGetAttrValueProto (TF_Operation oper, string attr_name, LLBuffer* output_attr_value, TF_Status status);
 
-        // NOTE: Commented out for now as we don't have an attribute metadata type associated with Proto
         // WARN: untested
-        //public TFBuffer GetAttrValueProto(string attrName, TFStatus status = null)
-        //{
-        //    if (handle == IntPtr.Zero)
-        //        TFDisposable.ObjectDisposedException();
-        //    var cstatus = TFStatus.Setup(status);
-        //    var r = new TFBuffer();
-        //    unsafe
-        //    {
-        //        TF_OperationGetAttrValueProto(handle, attrName, r.LLBuffer, cstatus.Handle);
-        //    }
-        //    cstatus.CheckMaybeRaise(status);
-        //    return r;
-        //}
+        public TFBuffer GetAttrValueProto(string attrName, TFStatus status = null)
+        {
+            if (handle == IntPtr.Zero)
+                TFDisposable.ObjectDisposedException();
+            var cstatus = TFStatus.Setup(status);
+            var r = new TFBuffer();
+            unsafe
+            {
+                TF_OperationGetAttrValueProto(handle, attrName, r.LLBuffer, cstatus.Handle);
+            }
+            cstatus.CheckMaybeRaise(status);
+            return r;
+        }
 
         // extern void TF_OperationToNodeDef (TF_Operation *oper, TF_Buffer *output_node_def, TF_Status *status);
         [DllImport (NativeBinding.TensorFlowLibrary)]
